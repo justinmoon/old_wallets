@@ -4,6 +4,7 @@
 ## `keypool.py`
 
 - should the keypool know about transactions? should `Keypool.next()` give the same address when called multiple times without receiving any transactions in the meantime?
+- `load` and `save` should just save the private keys so that they can still be loaded by the `sd` and `hd` wallets.
 
 ## `api.py`
 - should `api.py` have a `get_json` method? some repetitive code in there ...
@@ -11,3 +12,18 @@
     - our sends
     - our spends
     - our unspents
+
+    
+## teaching
+
+- every student should have a few private keys stored in local directory
+- a few funded w/ p2pk, a few funded w/ p2pkh, a few unfunded
+    - some can be funded when we learn to sign transactions (1 p2pk, 1 p2pkh)
+
+    
+## gameplan
+
+- transaction signing exercise 
+- fix keypool exercises
+- sd wallet
+- hd wallet
