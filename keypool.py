@@ -1,5 +1,4 @@
 from io import BytesIO
-from pickle import dumps, loads
 from random import randint
 from unittest import TestCase
 from os.path import isfile
@@ -107,6 +106,12 @@ def fund_keypool(keypool):
     gimme.fund_addresses(addresses)
 
 
+def construct_tx_out(address, amount):
+    h160 = decode_base58(address)
+    script = p2pkh_script(h160)
+    return TxOut(amount=amount, script_pubkey=script)
+
+
 def spend(keypool, send_amount, fee=500):
     # collect inputs
     unspent = keypool.unspent()
@@ -133,32 +138,21 @@ def spend(keypool, send_amount, fee=500):
         tx_in = TxIn(prev_tx, prev_index)
         tx_ins.append(tx_in)
 
+    # make sure we have enough
     assert input_sum > send_amount + fee
 
-    # send
-    # TODO: make an address_to_output function
-    send_address = keypool.next_address()
-    send_h160 = decode_base58(send_address)
-    send_script = p2pkh_script(send_h160)
-    send_output = TxOut(amount=send_amount,
-                        script_pubkey=send_script)
-
-    # change
-    fee = 500
-    change_address = keypool.next_address()
+    # outputs
+    send_output = construct_tx_out(keypool.next_address(), send_amount)
     change_amount = input_sum - send_amount - fee
-    change_h160 = decode_base58(prev_address)
-    change_script = p2pkh_script(change_h160)
-    change_output = TxOut(amount=change_amount, 
-                          script_pubkey=change_script)
+    change_output = construct_tx_out(keypool.next_address(), change_amount)
 
     # construct
     tx = Tx(1, tx_ins, [send_output, change_output], 0, True)
 
     # sign
     # FIXME
-    private_key = None
     for i in range(len(tx_ins)):
+        private_key = None
         print(f'signing {i}')
         prev_address = prev_addresses[i]
         prev_script_pubkey = prev_script_pubkeys[i]
