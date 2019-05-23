@@ -12,16 +12,13 @@ TIMEOUT = 5
 def get_balance(address):
     r = get(BALANCE_URL.format(address), timeout=TIMEOUT)
     if r.status_code != 200:
-        print(r)
         raise ConnectionError
     return r.json()
 
 def get_transactions(address):
     r = get(ADDRESS_URL.format(address), timeout=TIMEOUT)
     if r.status_code != 200:
-        print(r)
         raise ConnectionError
-    print(r.json())
     return r.json()['transactions']
 
 
@@ -29,10 +26,7 @@ def get_full_transactions(addresses):
     addresses = ''.join(addresses)
     r = get(TXS_URL.format(addresses), timeout=TIMEOUT)
     if r.status_code != 200:
-        print(r)
         raise ConnectionError
-    from pprint import pprint
-    pprint(r.json())
     return r.json()
 
 

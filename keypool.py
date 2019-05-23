@@ -107,58 +107,76 @@ def fund_keypool(keypool):
     gimme.fund_addresses(addresses)
 
 
-def spend(keypool):
+def spend(keypool, send_amount, fee=500):
+    # collect inputs
     unspent = keypool.unspent()
-    utxo = unspent[0]
-    prev_address = utxo['address']
-    prev_amount = utxo['satoshis']
-    prev_tx = bytes.fromhex(utxo['txid'])
-    prev_index = utxo['vout']
-    prev_pubkey = bytes.fromhex(utxo['scriptPubKey'])
-    prev_pubkey = serialize_varint(len(prev_pubkey)) + prev_pubkey
-    stream = BytesIO(prev_pubkey)
-    prev_script_pubkey = Script.parse(stream)
-    tx_in = TxIn(prev_tx, prev_index)
+    tx_ins = []
+    input_sum = 0
+    prev_addresses = []  # FIXME
+    prev_script_pubkeys = []  # FIXME
+    while input_sum < send_amount + fee:
+        utxo = unspent.pop(0)
+        prev_address = utxo['address']
+        prev_addresses.append(prev_address)
 
-    receiving_addr = keypool.next_address()
+        prev_amount = utxo['satoshis']
+        input_sum += prev_amount
 
+        prev_tx = bytes.fromhex(utxo['txid'])
+        prev_index = utxo['vout']
+        # utxo['scriptPubKey'] doesn't have a varint prefix ...
+        prev_pubkey = bytes.fromhex(utxo['scriptPubKey'])
+        prev_pubkey = serialize_varint(len(prev_pubkey)) + prev_pubkey
+        stream = BytesIO(prev_pubkey)
+        prev_script_pubkey = Script.parse(stream)
+        prev_script_pubkeys.append(prev_script_pubkey)
+        tx_in = TxIn(prev_tx, prev_index)
+        tx_ins.append(tx_in)
+
+    assert input_sum > send_amount + fee
 
     # send
-    send_amount = 10000
-    send_h160 = decode_base58(receiving_addr)
+    # TODO: make an address_to_output function
+    send_address = keypool.next_address()
+    send_h160 = decode_base58(send_address)
     send_script = p2pkh_script(send_h160)
     send_output = TxOut(amount=send_amount,
                         script_pubkey=send_script)
 
     # change
     fee = 500
-    change_amount = prev_amount - send_amount - fee
+    change_address = keypool.next_address()
+    change_amount = input_sum - send_amount - fee
     change_h160 = decode_base58(prev_address)
     change_script = p2pkh_script(change_h160)
     change_output = TxOut(amount=change_amount, 
                           script_pubkey=change_script)
 
     # construct
-    tx = Tx(1, [tx_in], [send_output, change_output], 0, True)
-    print(tx)
+    tx = Tx(1, tx_ins, [send_output, change_output], 0, True)
 
     # sign
-    assert tx.sign_input(0, keypool.keys[0], prev_script_pubkey)
-
-    # z = transaction.sig_hash(index)
-    # key = keypool.keys[0]        # FIXME
-    # der = private_key.sign(z).der()
-    # sig = der + SIGHASH_ALL.to_bytes(1, 'big')
-    # sec = private_key.public_key.sec()
-    # script_sig = Script([sig, sec])
-    # transaction.tx_ins[0].script_sig
-
-
+    # FIXME
+    private_key = None
+    for i in range(len(tx_ins)):
+        print(f'signing {i}')
+        prev_address = prev_addresses[i]
+        prev_script_pubkey = prev_script_pubkeys[i]
+        for key in keypool.keys:
+            if key.public_key.address(testnet=keypool.testnet) == prev_address:
+                private_key = key
+                break
+        if private_key is None:
+            raise Exception('private key not found')
+        assert tx.sign_input(i, private_key, prev_script_pubkey)
+        print('signed')
+    print(tx)
 
     # broadcast
     import bit
     tx_hex = tx.serialize().hex()
     print(tx_hex)
+    # raises a ConnectionError if it fails
     print(bit.network.NetworkAPI.broadcast_tx_testnet(tx_hex))
 
 
@@ -181,9 +199,10 @@ def main():
     print(keypool.unspent())
 
 if __name__ == '__main__':
-    main()
-    # keypool = Keypool.load(wallet_name)
-    # spend(keypool)
+    # main()
+    keypool = Keypool.load(wallet_name)
+    amount = randint(5_000, 20_000)
+    spend(keypool, amount)
 
     
 
