@@ -28,12 +28,14 @@ class Keypool:
         if not keys:
             keys = []
         self.keys = keys
-        self.fill()
+        if not self.keys:
+            self.fill()
 
     def fill(self):
         for _ in range(self.n):
             secret = randint(0, N)
             self.keys.append(PrivateKey(secret))
+        self.save(wallet_name)  # FIXME
 
     def next_key(self):
         # return the first key that hasn't seen any transactions
@@ -52,7 +54,12 @@ class Keypool:
 
     def save(self, filename):
         '''save private keys to disk'''
-        with open(filename, 'wb') as f:
+        # ugly check that we're not deleting private keys
+        keypool = self.load(filename)
+        secrets = [k.secret for k in keypool.keys]
+        for key in self.keys:
+            assert key.secret in secrets
+        with open(filename, 'w') as f:
             f.writelines([
                 key.hex() + '\n' for key in self.keys
             ])
@@ -86,8 +93,10 @@ class Keypool:
 
     def unspent(self):
         unspent = []
-        for address in self.addresses():
-            unspent.extend(get_unspent(address))
+        for key in self.keys:
+            address = key.public_key.address(testnet=self.testnet)
+            for u in get_unspent(address):
+                unspent.append([key, u])
         return unspent
 
 
@@ -117,25 +126,11 @@ def spend(keypool, send_amount, fee=500):
     unspent = keypool.unspent()
     tx_ins = []
     input_sum = 0
-    prev_addresses = []  # FIXME
-    prev_script_pubkeys = []  # FIXME
-    while input_sum < send_amount + fee:
-        utxo = unspent.pop(0)
-        prev_address = utxo['address']
-        prev_addresses.append(prev_address)
-
-        prev_amount = utxo['satoshis']
-        input_sum += prev_amount
-
-        prev_tx = bytes.fromhex(utxo['txid'])
-        prev_index = utxo['vout']
-        # utxo['scriptPubKey'] doesn't have a varint prefix ...
-        prev_pubkey = bytes.fromhex(utxo['scriptPubKey'])
-        prev_pubkey = serialize_varint(len(prev_pubkey)) + prev_pubkey
-        stream = BytesIO(prev_pubkey)
-        prev_script_pubkey = Script.parse(stream)
-        prev_script_pubkeys.append(prev_script_pubkey)
-        tx_in = TxIn(prev_tx, prev_index)
+    for private_key, utxo in unspent:
+        if input_sum >= send_amount + fee:
+            break
+        input_sum += utxo.amount
+        tx_in = TxIn(utxo.tx_id, utxo.index)
         tx_ins.append(tx_in)
 
     # make sure we have enough
@@ -152,18 +147,9 @@ def spend(keypool, send_amount, fee=500):
     # sign
     # FIXME
     for i in range(len(tx_ins)):
-        private_key = None
-        print(f'signing {i}')
-        prev_address = prev_addresses[i]
-        prev_script_pubkey = prev_script_pubkeys[i]
-        for key in keypool.keys:
-            if key.public_key.address(testnet=keypool.testnet) == prev_address:
-                private_key = key
-                break
-        if private_key is None:
-            raise Exception('private key not found')
-        assert tx.sign_input(i, private_key, prev_script_pubkey)
-        print('signed')
+        private_key, utxo = unspent[i]
+        assert tx.sign_input(i, private_key, utxo.script_pubkey)
+        print(f'signed {i}')
     print(tx)
 
     # broadcast
@@ -178,13 +164,7 @@ def spend(keypool, send_amount, fee=500):
 
 
 
-def main():
-    if isfile(wallet_name):
-        keypool = Keypool.load(wallet_name)
-    else:
-        keypool = create_keypool()
-
-    # fund_keypool(keypool)
+def status(keypool):
     print('balances')
     print(keypool.balance())
     print('transactions')
@@ -192,13 +172,25 @@ def main():
     print('unspent')
     print(keypool.unspent())
 
-if __name__ == '__main__':
-    # main()
-    keypool = Keypool.load(wallet_name)
-    amount = randint(5_000, 20_000)
-    spend(keypool, amount)
 
-    
+if __name__ == '__main__':
+    import sys
+    command = sys.argv[1] 
+    keypool = Keypool.load(wallet_name)
+
+    if command == 'status':
+        status(keypool)
+
+    elif command == 'fund':
+        fund_keypool(keypool)
+
+    elif command == 'spend':
+        amount = randint(5_000, 20_000)
+        spend(keypool, amount)
+
+    else:
+        print('invalid command')
+
 
 class KeypoolTests(TestCase):
 
