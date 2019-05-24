@@ -43,6 +43,9 @@ class Unspent:
         self.amount = amount
         self.script_pubkey = script_pubkey
 
+    def __repr__(self):
+        return f'output={self.tx_id.hex()}:{self.index} amount={self.amount}'
+
 
 def parse_script_pubkey(script_pubkey):
     prev_pubkey = bytes.fromhex(script_pubkey)
